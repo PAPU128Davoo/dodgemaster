@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dodge Master</title>
+<style>
+body { margin:0; overflow:hidden; font-family: Arial; }
+#startScreen{
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  display:flex; justify-content:center; align-items:center; flex-direction:column;
+  background:#0077aa; color:white; font-size:30px; text-align:center;
+}
+#score,#coins,#highscore{position:absolute;top:10px;color:white;font-size:20px; display:none;}
+#coins{left:150px;}
+#highscore{left:350px;}
+#shop{position:absolute; top:50px; left:10px; background: rgba(0,0,0,0.8); padding:10px; color:white; display:none;}
+#shop button{display:block; margin:5px 0; padding:5px;}
+#shopTitle{font-weight:bold;margin-bottom:5px;}
+#openShop,#resetProgress,#redeemCode{padding:5px 10px; border:none; cursor:pointer;}
+#openShop,#resetProgress,#codeInputDiv{position:absolute;}
+#openShop{top:10px; right:10px; background:#444; color:white;}
+#resetProgress{top:70px; right:10px; background:#800; color:white;}
+#codeInputDiv{top:130px; right:10px; background: rgba(0,0,0,0.7); padding:5px; color:white;}
+#codeInput{padding:3px; width:150px;}
+#startCoins, #startHighscore {
+  font-size: 22px;
+  margin-top: 10px;
+  padding: 5px 15px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 8px;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.7);
+}
+</style>
+</head>
+<body>
+
+<div id="startScreen">
+  <div>DODGE MASTER BY JULEN-DAVID</div>
+  <div id="pressSpace" style="font-size:20px;margin-top:10px;">
+    Pulsa ESPACIO para jugar / Press SPACE to play
+  </div>
+  <div id="startCoins">Monedas: 0</div>
+  <div id="startHighscore">Récord: 0</div>
+
+  <div id="carSelection" style="margin-top:20px;">
+    <label for="carSelect" style="font-size:18px;">Selecciona tu coche: </label>
+    <select id="carSelect" style="font-size:16px; padding:5px;"></select>
+  </div>
+
+  <button id="openShop">Tienda</button>
+  <button id="resetProgress">Reiniciar progreso</button>
+  <div id="codeInputDiv">
+    <input type="text" id="codeInput" placeholder="Introduce código"/>
+    <button id="redeemCode">Canjear</button>
+  </div>
+  <div id="shop">
+    <div id="shopTitle">Tienda</div>
+    <button data-coins="20" data-type="doubleCoins">Doble de Monedas (20 monedas)</button>
+    <button data-coins="20" data-type="doubleScore">Doble de Puntuación (20 monedas)</button>
+    <button data-coins="50" data-type="doubleCar">Coche Doble (50 monedas)</button>
+    <button data-coins="10000" data-type="ultraCar">Coche Ultra (10.000 monedas)</button>
+    <button data-coins="50000" data-type="superMegaCar">Coche SuperMega (50.000 monedas)</button>
+  </div>
+</div>
+
+<div id="score">Puntos: 0</div>
+<div id="coins">Monedas: 0</div>
+<div id="highscore">Récord: 0</div>
+
+<!-- Three.js desde CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
+
+<script>
+// ---------------------- Variables ----------------------
+let gameStarted=false;
+const startScreen=document.getElementById('startScreen');
+const scoreEl=document.getElementById('score');
+const coinsEl=document.getElementById('coins');
+const highscoreEl=document.getElementById('highscore');
+const startCoinsEl=document.getElementById('startCoins');
+const startHighscoreEl=document.getElementById('startHighscore');
+
+let coins = parseInt(localStorage.getItem('coins')) || 0;
+let highScore = parseInt(localStorage.getItem('highScore')) || 0;
+coinsEl.innerText = 'Monedas: ' + coins;
+highscoreEl.innerText = 'Récord: ' + highScore;
+startCoinsEl.innerText = 'Monedas: ' + coins;
+startHighscoreEl.innerText = 'Récord: ' + highScore;
+
+let doubleCoins = localStorage.getItem('doubleCoins')==='true';
+let doubleScore = localStorage.getItem('doubleScore')==='true';
+let adminCarActive = localStorage.getItem('adminCarActive')==='true';
+let adminLives = parseInt(localStorage.getItem('adminLives'))||2;
+let doubleCarActive = localStorage.getItem('doubleCarActive')==='true';
+let ultraCarActive = localStorage.getItem('ultraCarActive')==='true';
+let superMegaCarActive = localStorage.getItem('superMegaCarActive')==='true';
+let specialCatCarActive = localStorage.getItem('specialCatCarActive')==='true';
+let whiteCarActive = localStorage.getItem('oledCarActive')==='true';
+let usedCodes = JSON.parse(localStorage.getItem('usedCodes')||'[]');
+
+// ---------------------- Parpadeo "Pulsa ESPACIO" ----------------------
+const pressText = document.getElementById('pressSpace');
+let visible = true;
+const blinkInterval = setInterval(()=>{
+  if(!gameStarted){ visible = !visible; pressText.style.visibility = visible ? 'visible' : 'hidden'; }
+  else { pressText.style.visibility='visible'; clearInterval(blinkInterval); }
+},500);
+
+// ---------------------- Menú de coches ----------------------
+const carSelect = document.getElementById('carSelect');
+let selectedCar = null;
+
+function actualizarMenuCoches(){
+  carSelect.innerHTML = '';
+
+  function addCarOption(name,color,special,coinMultiplier,scoreMultiplier,purchased=false){
+    const option = document.createElement('option');
+    option.value = JSON.stringify({color,special,coinMultiplier,scoreMultiplier});
+    let multText = `(x${coinMultiplier} monedas, x${scoreMultiplier} puntuación)`;
+    option.text = purchased ? `${name} ${multText}` : name;
+    carSelect.appendChild(option);
+  }
+
+  addCarOption('Normal',0x00ff00,'none',1,1);
+  if(adminCarActive) addCarOption('Admin',0xff00ff,'admin',500000,10000,true);
+  if(specialCatCarActive) addCarOption('Gato',0x808080,'cat',1,1,true);
+  if(doubleCoins) addCarOption('Doble Monedas',0xffff00,'doubleCoins',2,1,true);
+  if(doubleScore) addCarOption('Doble Puntuación',0x00ffff,'doubleScore',1,2,true);
+  if(doubleCarActive) addCarOption('Coche Doble',0xff8800,'doubleCar',2,2,true);
+  if(ultraCarActive) addCarOption('Coche Ultra',0x0000ff,'ultraCar',10,10,true);
+  if(superMegaCarActive) addCarOption('Coche SuperMega',0xffaa00,'superMegaCar',50,30,true);
+  if(whiteCarActive) addCarOption('Coche OLED',0xffffff,'oled',1,5,true);
+
+  selectedCar = JSON.parse(carSelect.value);
+}
+actualizarMenuCoches();
+carSelect.addEventListener('change', ()=>{ selectedCar = JSON.parse(carSelect.value); });
+
+// ---------------------- Botones de la tienda ----------------------
+const shop=document.getElementById('shop');
+document.getElementById('openShop').addEventListener('click', ()=>{
+  if(gameStarted) return;
+  shop.style.display = (shop.style.display==='none')?'block':'none';
+});
+
+shop.querySelectorAll('button').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const cost=parseInt(btn.dataset.coins);
+    const type=btn.dataset.type;
+    if(localStorage.getItem(type)==='true'){ alert('Ya compraste este coche/mejora'); return; }
+    if(coins>=cost){
+      coins-=cost;
+      coinsEl.innerText='Monedas: '+coins;
+      startCoinsEl.innerText='Monedas: '+coins;
+      localStorage.setItem('coins',coins);
+
+      switch(type){
+        case 'doubleCoins': doubleCoins=true; localStorage.setItem('doubleCoins',true); break;
+        case 'doubleScore': doubleScore=true; localStorage.setItem('doubleScore',true); break;
+        case 'doubleCar': doubleCarActive=true; localStorage.setItem('doubleCarActive',true); break;
+        case 'ultraCar': ultraCarActive=true; localStorage.setItem('ultraCarActive',true); break;
+        case 'superMegaCar': superMegaCarActive=true; localStorage.setItem('superMegaCarActive',true); break;
+      }
+      localStorage.setItem(type,true);
+      actualizarMenuCoches();
+      alert(`Compraste ${btn.textContent}! Multiplicadores: monedas x${selectedCar.coinMultiplier || 1}, puntuación x${selectedCar.scoreMultiplier || 1}`);
+    } else alert('No tienes suficientes monedas');
+  });
+});
+
+// ---------------------- Códigos ----------------------
+function redeemCode(code){
+  code = code.trim().toUpperCase();
+  if(usedCodes.includes(code)){ alert('Código ya usado'); return; }
+  switch(code){
+    case '/COINS/': coins += 100; alert('¡100 monedas!'); break;
+    case '/112358XD/':
+      adminCarActive=true;
+      adminLives=2;
+      localStorage.setItem('adminCarActive',true);
+      localStorage.setItem('adminLives',adminLives);
+      alert('¡Coche Admin activado! Multiplicadores x500.000 monedas y x10.000 puntuación');
+      break;
+    case '/67/': coins += 67; alert('¡67 monedas!'); break;
+    case '/JOSELUIS/': specialCatCarActive=true; localStorage.setItem('specialCatCarActive',true); alert('¡Coche Gato activado!'); break;
+    case '/OLED/':
+      coins += 5000;
+      localStorage.setItem('coins', coins);
+      whiteCarActive = true;
+      localStorage.setItem('oledCarActive', true);
+      alert('¡5000 monedas y coche blanco x5 puntuación activados!');
+      break;
+    default: alert('Código inválido'); return;
+  }
+  usedCodes.push(code);
+  localStorage.setItem('usedCodes',JSON.stringify(usedCodes));
+  coinsEl.innerText='Monedas: '+coins;
+  startCoinsEl.innerText='Monedas: '+coins;
+  actualizarMenuCoches();
+}
+document.getElementById('redeemCode').addEventListener('click', ()=>{
+  const codeInput=document.getElementById('codeInput');
+  redeemCode(codeInput.value);
+  codeInput.value='';
+});
+
+// ---------------------- Iniciar juego ----------------------
+document.addEventListener('keydown', (e)=>{
+  if(!gameStarted && e.code==='Space'){
+    if(!selectedCar){ alert('¡Selecciona un coche antes de jugar!'); return; }
+    startScreen.style.display='none';
+    scoreEl.style.display='block';
+    coinsEl.style.display='block';
+    highscoreEl.style.display='block';
+    gameStarted=true;
+    initGame();
+  }
+});
+
+// ---------------------- Juego ----------------------
+function initGame(){
+  let score=0, speed=0.35, distanceTravelled=0;
+  let scene=new THREE.Scene();
+  scene.fog=new THREE.Fog(0x87ceeb,10,200);
+  scene.background = 0x87ceeb;
+
+  let camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
+  camera.position.set(0,5,10);
+  let renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  let light=new THREE.DirectionalLight(0xffffff,1);
+  light.position.set(5,10,7);
+  scene.add(light);
+
+  // carretera
+  let road = new THREE.Mesh(new THREE.PlaneGeometry(14,200), new THREE.MeshPhongMaterial({color:0x333333}));
+  road.rotation.x=-Math.PI/2;
+  road.position.z=-50;
+  scene.add(road);
+
+  // líneas
+  let lineMat = new THREE.LineBasicMaterial({color:0xffffff});
+  let lines = [];
+  for(let z=-100; z<100; z+=10){
+    let points = [];
+    points.push(new THREE.Vector3(0,0.01,z));
+    points.push(new THREE.Vector3(0,0.01,z+5));
+    let lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+    let line = new THREE.Line(lineGeo,lineMat);
+    scene.add(line);
+    lines.push(line);
+  }
+
+  // césped
+  let grassMat = new THREE.MeshPhongMaterial({color:0x228822});
+  let grassLeft = new THREE.Mesh(new THREE.PlaneGeometry(50,200),grassMat);
+  grassLeft.rotation.x=-Math.PI/2; grassLeft.position.x=-32; grassLeft.position.z=-50; scene.add(grassLeft);
+  let grassRight = new THREE.Mesh(new THREE.PlaneGeometry(50,200),grassMat);
+  grassRight.rotation.x=-Math.PI/2; grassRight.position.x=32; grassRight.position.z=-50; scene.add(grassRight);
+
+  // vallas
+  let fenceMat = new THREE.MeshPhongMaterial({color:0x964B00});
+  let fenceGeo = new THREE.BoxGeometry(0.5,2,200);
+  let fenceLeft = new THREE.Mesh(fenceGeo,fenceMat); fenceLeft.position.x=-13; fenceLeft.position.y=1; fenceLeft.position.z=-50; scene.add(fenceLeft);
+  let fenceRight = new THREE.Mesh(fenceGeo,fenceMat); fenceRight.position.x=13; fenceRight.position.y=1; fenceRight.position.z=-50; scene.add(fenceRight);
+
+  // coche
+  let carMaterial = new THREE.MeshPhongMaterial({color:selectedCar.color});
+  let car = new THREE.Mesh(new THREE.BoxGeometry(1,1,2), carMaterial);
+  car.position.y=0.5;
+  scene.add(car);
+
+  // cabina
+  let cabinMaterial = new THREE.MeshPhongMaterial({color:0x555555});
+  let cabin = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.5,1), cabinMaterial);
+  cabin.position.y = 1.0;
+  car.add(cabin);
+
+  // etiqueta Admin
+  let adminLabel = null;
+  if(selectedCar.special==='admin'){
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.font = '48px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('ADMIN', 128, 48);
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture });
+    adminLabel = new THREE.Sprite(material);
+    adminLabel.scale.set(3,0.75,1);
+    adminLabel.position.set(car.position.x, 2, car.position.z);
+    scene.add(adminLabel);
+  }
+
+  // obstáculos y monedas
+  let obstacles=[], coinsItems=[];
+  let obstacleGeo=new THREE.BoxGeometry(1.5,1.5,1.5), obstacleMat=new THREE.MeshPhongMaterial({color:0xff0000});
+  let coinGeo=new THREE.BoxGeometry(1.2,1.2,1.2), coinMat=new THREE.MeshPhongMaterial({color:0xffff00});
+
+  let keys={};
+  document.addEventListener('keydown', e=>keys[e.key]=true);
+  document.addEventListener('keyup', e=>keys[e.key]=false);
+
+  function updateCar(){
+    if(keys['ArrowLeft'] && car.position.x>-6.5) car.position.x-=0.5;
+    if(keys['ArrowRight'] && car.position.x<6.5) car.position.x+=0.5;
+    if(adminLabel) { adminLabel.position.x = car.position.x; adminLabel.position.z = car.position.z; }
+  }
+
+  function createObstacle(){
+    let obs=new THREE.Mesh(obstacleGeo,obstacleMat);
+    obs.position.x=(Math.random()-0.5)*6.5;
+    obs.position.z=-100;
+    obs.position.y=0.75;
+    scene.add(obs);
+    obstacles.push(obs);
+  }
+
+  function createCoin(){
+    let c = new THREE.Mesh(coinGeo,coinMat);
+    c.position.x=(Math.random()-0.5)*6.5;
+    c.position.z=-100;
+    c.position.y=0.6;
+    scene.add(c);
+    coinsItems.push(c);
+  }
+
+  function updateObjects(){
+    distanceTravelled += speed;
+    score = Math.floor(distanceTravelled * (selectedCar.scoreMultiplier || 1));
+    scoreEl.innerText='Puntos: '+score;
+
+    for(let line of lines){ line.position.z += speed; if(line.position.z>5) line.position.z -= 200; }
+
+    for(let i=obstacles.length-1;i>=0;i--){
+      obstacles[i].position.z+=speed;
+      if(obstacles[i].position.z>5){ scene.remove(obstacles[i]); obstacles.splice(i,1); continue; }
+      let dx=Math.abs(car.position.x-obstacles[i].position.x);
+      let dz=Math.abs(car.position.z-obstacles[i].position.z);
+      if(dx<1 && dz<1.5){
+        if(selectedCar.special==='admin'){
+          adminLives--; localStorage.setItem('adminLives',adminLives);
+          alert('Coche Admin: Te queda '+adminLives+' vida(s)');
+          scene.remove(obstacles[i]); obstacles.splice(i,1);
+          if(adminLives<=0) endGame();
+        } else endGame();
+      }
+    }
+
+    for(let i=coinsItems.length-1;i>=0;i--){
+      coinsItems[i].position.z+=speed;
+      if(coinsItems[i].position.z>5){ scene.remove(coinsItems[i]); coinsItems.splice(i,1); continue; }
+      let dx=Math.abs(car.position.x-coinsItems[i].position.x);
+      let dz=Math.abs(car.position.z-coinsItems[i].position.z);
+      if(dx<1 && dz<1.5){
+        coins += (selectedCar.coinMultiplier || 1);
+        coinsEl.innerText='Monedas: '+coins;
+        localStorage.setItem('coins', coins);
+        scene.remove(coinsItems[i]);
+        coinsItems.splice(i,1);
+      }
+    }
+  }
+
+  function endGame(){
+    if(score>highScore){ highScore=score; localStorage.setItem('highScore', highScore); highscoreEl.innerText='Récord: '+highScore; }
+    alert('¡Chocaste! Puntaje: '+score+', Monedas: '+coins);
+    location.reload();
+  }
+
+  function animate(){ requestAnimationFrame(animate); updateCar(); updateObjects(); renderer.render(scene,camera);}
+  animate();
+  setInterval(createObstacle,1500);
+  setInterval(createCoin,3000);
+
+  window.addEventListener('resize',()=>{ camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
+}
+</script>
+</body>
+</html>
